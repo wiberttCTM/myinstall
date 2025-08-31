@@ -15,9 +15,13 @@ function error_exit {
 # === Update mirrors before installing ===
 echo ">>> Actualizando mirrors..."
 pacman -Sy --noconfirm reflector pacman-contrib || error_exit "No se pudo instalar reflector y pacman-contrib."
-reflector --country Peru,Brazil,Chile \
+
+# Use reflector to find the 20 fastest mirrors from several countries
+# This makes the installation more resilient to slow mirrors.
+reflector --country Peru,Brazil,Chile,Ecuador,Colombia,Argentina \
     --protocol https \
     --sort rate \
+    --latest 20 \
     --save /etc/pacman.d/mirrorlist
 pacman -Syy
 
@@ -96,9 +100,22 @@ mount "$ROOT" /mnt
 mkdir -p /mnt/boot/efi
 mount "$EFI" /mnt/boot/efi
 
-# === Install base system ===
-echo ">>> Instalando sistema base..."
-pacstrap -K /mnt base linux linux-firmware amd-ucode grub efibootmgr sudo networkmanager
+# === Install base system with retry logic ===
+retries=3
+for i in $(seq 1 $retries); do
+    echo ">>> Intento $i de $retries: Instalando sistema base..."
+    # The 'zsh' package is added here so the user creation works inside chroot.
+    if pacstrap -K /mnt base linux linux-firmware amd-ucode grub efibootmgr sudo networkmanager zsh; then
+        echo ">>> Instalación base exitosa."
+        break
+    else
+        if [ $i -eq $retries ]; then
+            error_exit "Falló la instalación base después de $retries intentos. Revisa tu conexión a internet y los mirrors."
+        fi
+        echo ">>> Falló la instalación base. Esperando 10 segundos antes de reintentar..."
+        sleep 10
+    fi
+done
 
 # === Generate fstab ===
 echo ">>> Generando fstab..."
@@ -132,7 +149,7 @@ grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=ArchL
 grub-mkconfig -o /boot/grub/grub.cfg
 
 # Create user with ZSH as default shell
-useradd -m -G wheel -s /bin/bash "$USERNAME"
+useradd -m -G wheel -s /bin/zsh "$USERNAME"
 
 # Enable sudo for wheel group
 sed -i 's/# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
