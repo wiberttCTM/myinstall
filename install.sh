@@ -7,15 +7,17 @@ set -euo pipefail
 #   - Disco: /dev/nvme0n1
 #   - Particiones: EFI (800 MB) + ROOT (resto)
 #   - Idioma del sistema: inglés (en_US.UTF-8)
-#   - Usuario normal con sudo: wibertt
+#   - Usuario y hostname definidos por el usuario al inicio
 #   - Hora: America/Lima
 # --------------------------------------------------------------
 
 DISK="/dev/nvme0n1"
 EFI="${DISK}p1"
 ROOT="${DISK}p2"
-HOSTNAME="archlinux"
-USERNAME="wibertt"
+
+# Preguntar al usuario datos importantes
+read -rp ">>> Ingresa el nombre del HOSTNAME: " HOSTNAME
+read -rp ">>> Ingresa el nombre del USUARIO: " USERNAME
 
 echo ">>> Verificando arranque UEFI..."
 if [[ ! -d /sys/firmware/efi/efivars ]]; then
@@ -51,6 +53,9 @@ echo ">>> Entrando al sistema..."
 arch-chroot /mnt /bin/bash <<EOF
 set -euo pipefail
 
+HOSTNAME="$HOSTNAME"
+USERNAME="$USERNAME"
+
 echo ">>> Configuración básica..."
 ln -sf /usr/share/zoneinfo/America/Lima /etc/localtime
 hwclock --systohc
@@ -61,11 +66,11 @@ locale-gen
 echo "LANG=en_US.UTF-8" > /etc/locale.conf
 
 # Hostname y hosts
-echo "$HOSTNAME" > /etc/hostname
+echo "\$HOSTNAME" > /etc/hostname
 cat > /etc/hosts <<HOSTS
 127.0.0.1    localhost
 ::1          localhost
-127.0.1.1    $HOSTNAME.localdomain $HOSTNAME
+127.0.1.1    \$HOSTNAME.localdomain \$HOSTNAME
 HOSTS
 
 echo ">>> Instalando y configurando GRUB..."
@@ -73,9 +78,13 @@ grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
 grub-mkconfig -o /boot/grub/grub.cfg
 
 echo ">>> Configurando root y usuario..."
-echo "root:root" | chpasswd
-useradd -m -G wheel -s /bin/bash $USERNAME
-echo "$USERNAME:1234" | chpasswd
+# Pide contraseñas de forma segura
+echo ">>> Establece la contraseña para root:"
+passwd
+
+useradd -m -G wheel -s /bin/bash "\$USERNAME"
+echo ">>> Establece la contraseña para el usuario \$USERNAME:"
+passwd "\$USERNAME"
 
 # Habilitar sudo
 sed -i 's/# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
