@@ -38,6 +38,25 @@ while true; do
   echo "ERROR: El usuario no puede estar vacío."
 done
 
+# === Pedir contraseñas ===
+while true; do
+  read -rsp ">>> Ingresa la contraseña de ROOT: " ROOTPASS
+  echo
+  read -rsp ">>> Confirma la contraseña de ROOT: " ROOTPASS2
+  echo
+  [[ "$ROOTPASS" == "$ROOTPASS2" ]] && break
+  echo "ERROR: Las contraseñas no coinciden."
+done
+
+while true; do
+  read -rsp ">>> Ingresa la contraseña de $USERNAME: " USERPASS
+  echo
+  read -rsp ">>> Confirma la contraseña de $USERNAME: " USERPASS2
+  echo
+  [[ "$USERPASS" == "$USERPASS2" ]] && break
+  echo "ERROR: Las contraseñas no coinciden."
+done
+
 # === Verificar UEFI ===
 echo ">>> Verificando arranque UEFI..."
 if [[ ! -d /sys/firmware/efi/efivars ]]; then
@@ -106,18 +125,14 @@ useradd -m -G wheel -s /bin/zsh "$USERNAME"
 # Habilitar sudo para grupo wheel
 sed -i 's/# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
 
-# Servicios
+# Servicios básicos
 echo ">>> Habilitando servicios..."
 systemctl enable NetworkManager
 systemctl enable systemd-timesyncd
-systemctl enable bluetooth
-systemctl enable sddm
 
-# Contraseñas (se piden aquí dentro para seguridad)
-echo ">>> Configura la contraseña de ROOT:"
-passwd root
-echo ">>> Configura la contraseña de $USERNAME:"
-passwd $USERNAME
+# Contraseñas (aplicadas desde variables)
+echo "root:$ROOTPASS" | chpasswd
+echo "$USERNAME:$USERPASS" | chpasswd
 
 # Copiar postinstall.sh si existe
 if [[ -f /root/postinstall.sh ]]; then
@@ -133,7 +148,7 @@ echo
 echo ">>> ✅ Instalación completada."
 echo ">>> ¿Qué deseas hacer ahora?"
 select opt in "Reiniciar" "Salir sin reiniciar"; do
-    case $opt in
+    case \$opt in
         "Reiniciar")
             echo ">>> Reiniciando..."
             reboot
