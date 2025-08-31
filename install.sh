@@ -6,6 +6,15 @@ set -uo pipefail  # evitar errores por variables no definidas
 #  Adaptado para Lenovo V15 G2 ALC Ryzen 5 5500U
 # --------------------------------------------------------------
 
+# === Actualizar mirrors antes de instalar ===
+echo ">>> Actualizando mirrors (los más rápidos en tu zona)..."
+pacman -Sy --noconfirm pacman-contrib curl
+curl -s "https://archlinux.org/mirrorlist/?country=PE&country=BR&country=CL&protocol=https&ip_version=4" \
+  | sed 's/^#Server/Server/' > /etc/pacman.d/mirrorlist
+rankmirrors -n 5 /etc/pacman.d/mirrorlist > /etc/pacman.d/mirrorlist.new
+mv /etc/pacman.d/mirrorlist.new /etc/pacman.d/mirrorlist
+pacman -Syy
+
 # === Pedir disco destino ===
 lsblk -d -o NAME,SIZE,MODEL
 read -rp ">>> Ingresa el disco destino (ej: /dev/nvme0n1): " DISK
@@ -124,7 +133,7 @@ echo
 echo ">>> ✅ Instalación completada."
 echo ">>> ¿Qué deseas hacer ahora?"
 select opt in "Reiniciar" "Salir sin reiniciar"; do
-    case \$opt in
+    case $opt in
         "Reiniciar")
             echo ">>> Reiniciando..."
             reboot
