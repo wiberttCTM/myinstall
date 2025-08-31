@@ -1,5 +1,5 @@
 #!/bin/bash
-set -uo pipefail  # evitar errores por variables no definidas
+set -uo pipefail
 
 # --------------------------------------------------------------
 #  Arch Linux Automated Installation (UEFI + NVMe + GRUB + user)
@@ -136,30 +136,35 @@ echo "$USERNAME:$USERPASS" | chpasswd
 
 # Copiar postinstall.sh si existe
 if [[ -f /root/postinstall.sh ]]; then
-    cp /root/postinstall.sh /home/$USERNAME/
-    chown $USERNAME:$USERNAME /home/$USERNAME/postinstall.sh
-    chmod +x /home/$USERNAME/postinstall.sh
+    cp /root/postinstall.sh "/home/$USERNAME/"
+    chown "$USERNAME:$USERNAME" "/home/$USERNAME/postinstall.sh"
+    chmod +x "/home/$USERNAME/postinstall.sh"
 fi
 
 EOF
 
 # === Finalizar instalación con menú ===
 echo
-echo ">>> ✅ Instalación completada."
+echo ">>> Instalación completada."
 echo ">>> ¿Qué deseas hacer ahora?"
-select opt in "Reiniciar" "Salir sin reiniciar"; do
-    case \$opt in
-        "Reiniciar")
-            echo ">>> Reiniciando..."
-            reboot
-            break
-            ;;
-        "Salir sin reiniciar")
-            echo ">>> Has salido del script. Recuerda reiniciar manualmente antes de usar Arch."
-            break
-            ;;
-        *)
-            echo "Opción inválida."
-            ;;
-    esac
+while true; do
+  echo "1) Reiniciar"
+  echo "2) Salir sin reiniciar"
+  read -rp "Selecciona una opción (1-2): " choice
+  case $choice in
+    1)
+      echo ">>> Reiniciando..."
+      umount -R /mnt
+      reboot
+      break
+      ;;
+    2)
+      echo ">>> Has salido del script. Recuerda reiniciar manualmente antes de usar Arch."
+      umount -R /mnt
+      break
+      ;;
+    *)
+      echo "Opción inválida. Por favor, ingresa 1 o 2."
+      ;;
+  esac
 done
