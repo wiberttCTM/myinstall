@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+set -uo pipefail  # desactivo -e para no cerrarse automáticamente
 
 # --------------------------------------------------------------
 #  Arch Linux Automated Installation (UEFI + NVMe + GRUB + user)
@@ -15,14 +15,23 @@ DISK="/dev/nvme0n1"
 EFI="${DISK}p1"
 ROOT="${DISK}p2"
 
-# Preguntar al usuario datos importantes
-read -rp ">>> Ingresa el nombre del HOSTNAME: " HOSTNAME
-read -rp ">>> Ingresa el nombre del USUARIO: " USERNAME
+# Pedir datos al usuario con validación
+while true; do
+    read -rp ">>> Ingresa el nombre del HOSTNAME: " HOSTNAME
+    [[ -n "$HOSTNAME" ]] && break
+    echo "ERROR: El hostname no puede estar vacío."
+done
+
+while true; do
+    read -rp ">>> Ingresa el nombre del USUARIO: " USERNAME
+    [[ -n "$USERNAME" ]] && break
+    echo "ERROR: El usuario no puede estar vacío."
+done
 
 echo ">>> Verificando arranque UEFI..."
 if [[ ! -d /sys/firmware/efi/efivars ]]; then
-  echo "ERROR: No estás en modo UEFI."
-  exit 1
+    echo "ERROR: No estás en modo UEFI."
+    exit 1
 fi
 
 echo ">>> Limpiando disco $DISK..."
@@ -47,11 +56,11 @@ echo ">>> Instalando sistema base..."
 pacstrap -K /mnt base linux linux-firmware grub efibootmgr vim nano sudo networkmanager
 
 echo ">>> Generando fstab..."
-genfstab -U /mnt >>/mnt/etc/fstab
+genfstab -U /mnt >> /mnt/etc/fstab
 
 echo ">>> Entrando al sistema..."
 arch-chroot /mnt /bin/bash <<EOF
-set -euo pipefail
+set -uo pipefail  # evitar cierre inesperado
 
 HOSTNAME="$HOSTNAME"
 USERNAME="$USERNAME"
@@ -74,11 +83,10 @@ cat > /etc/hosts <<HOSTS
 HOSTS
 
 echo ">>> Instalando y configurando GRUB..."
-grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
+grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Archlinux
 grub-mkconfig -o /boot/grub/grub.cfg
 
 echo ">>> Configurando root y usuario..."
-# Pide contraseñas de forma segura
 echo ">>> Establece la contraseña para root:"
 passwd
 
@@ -95,4 +103,7 @@ systemctl enable systemd-timesyncd
 
 EOF
 
-echo ">>> Instalación completada. Puedes reiniciar con: reboot"
+# Pausa antes de reiniciar
+echo ">>> Instalación completada. Presiona Enter para reiniciar..."
+read -r _
+reboot
