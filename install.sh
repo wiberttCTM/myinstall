@@ -1,15 +1,22 @@
 #!/bin/bash
-set -uo pipefail # evitar errores por variables no definidas
+set -uo pipefail  # evitar errores por variables no definidas
 
 # --------------------------------------------------------------
 #  Arch Linux Automated Installation (UEFI + NVMe + GRUB + user)
+#  Adaptado para Lenovo V15 G2 ALC Ryzen 5 5500U
 # --------------------------------------------------------------
 
-DISK="/dev/nvme0n1"
+# === Pedir disco destino ===
+lsblk -d -o NAME,SIZE,MODEL
+read -rp ">>> Ingresa el disco destino (ej: /dev/nvme0n1): " DISK
 EFI="${DISK}p1"
 ROOT="${DISK}p2"
 
-# Pedir datos al usuario
+# Confirmación antes de borrar todo
+read -rp "⚠️ Se borrará TODO en $DISK. ¿Seguro? (yes/NO): " CONFIRM
+[[ "$CONFIRM" == "yes" ]] || exit 1
+
+# === Pedir datos de usuario ===
 while true; do
   read -rp ">>> Ingresa el nombre del HOSTNAME: " HOSTNAME
   [[ -n "$HOSTNAME" ]] && break
@@ -22,23 +29,14 @@ while true; do
   echo "ERROR: El usuario no puede estar vacío."
 done
 
-while true; do
-  read -rsp ">>> Contraseña para ROOT: " ROOT_PASS
-  echo
-  read -rsp ">>> Contraseña para USUARIO $USERNAME: " USER_PASS
-  echo
-  [[ -n "$ROOT_PASS" && -n "$USER_PASS" ]] && break
-  echo "ERROR: Las contraseñas no pueden estar vacías."
-done
-
-# Verificar UEFI
+# === Verificar UEFI ===
 echo ">>> Verificando arranque UEFI..."
 if [[ ! -d /sys/firmware/efi/efivars ]]; then
   echo "ERROR: No estás en modo UEFI."
   exit 1
 fi
 
-# Limpiar disco y crear particiones
+# === Limpiar disco y crear particiones ===
 echo ">>> Limpiando disco $DISK..."
 wipefs -a "$DISK"
 sgdisk --zap-all "$DISK"
@@ -49,7 +47,7 @@ parted -s "$DISK" mkpart ESP fat32 1MiB 801MiB
 parted -s "$DISK" set 1 esp on
 parted -s "$DISK" mkpart primary ext4 801MiB 100%
 
-# Formatear y montar
+# === Formatear y montar ===
 echo ">>> Formateando particiones..."
 mkfs.fat -F32 "$EFI"
 mkfs.ext4 -F "$ROOT"
@@ -58,23 +56,17 @@ echo ">>> Montando particiones..."
 mount "$ROOT" /mnt
 mount --mkdir "$EFI" /mnt/boot
 
-# Instalar sistema base
+# === Instalar sistema base ===
 echo ">>> Instalando sistema base..."
-pacstrap -K /mnt base linux linux-firmware grub efibootmgr vim nano sudo networkmanager
+pacstrap -K /mnt base linux linux-firmware amd-ucode grub efibootmgr sudo networkmanager
 
-# Generar fstab
+# === Generar fstab ===
 echo ">>> Generando fstab..."
 genfstab -U /mnt >>/mnt/etc/fstab
 
-# Entrar al chroot y configurar
+# === Entrar al chroot y configurar ===
 arch-chroot /mnt /bin/bash <<EOF
 set -uo pipefail
-
-# Variables pasadas desde fuera
-HOSTNAME="$HOSTNAME"
-USERNAME="$USERNAME"
-ROOT_PASS="$ROOT_PASS"
-USER_PASS="$USER_PASS"
 
 # Configuración básica
 echo ">>> Configuración de zona horaria..."
@@ -87,41 +79,63 @@ locale-gen
 echo "LANG=en_US.UTF-8" > /etc/locale.conf
 
 # Hostname y hosts
-echo "\$HOSTNAME" > /etc/hostname
+echo "$HOSTNAME" > /etc/hostname
 cat > /etc/hosts <<HOSTS
-127.0.0.1    localhost
-::1          localhost
-127.0.1.1    \$HOSTNAME.localdomain \$HOSTNAME
+127.0.0.1    localhost localhost.localdomain
+::1          localhost localhost.localdomain
+127.0.1.1    $HOSTNAME.localdomain $HOSTNAME
 HOSTS
 
 # Instalar y configurar GRUB
 echo ">>> Instalando GRUB..."
-grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Archlinux
+grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=ArchLinux
 grub-mkconfig -o /boot/grub/grub.cfg
 
-# Configurar root y usuario
-echo ">>> Configurando contraseñas..."
-echo "root:\$ROOT_PASS" | chpasswd
-useradd -m -G wheel -s /bin/bash "\$USERNAME"
-echo "\$USERNAME:\$USER_PASS" | chpasswd
+# Crear usuario con ZSH por defecto
+useradd -m -G wheel -s /bin/zsh "$USERNAME"
 
-# Habilitar sudo
+# Habilitar sudo para grupo wheel
 sed -i 's/# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
 
 # Servicios
 echo ">>> Habilitando servicios..."
 systemctl enable NetworkManager
 systemctl enable systemd-timesyncd
+systemctl enable bluetooth
+systemctl enable sddm
 
-# Copiar postinstall.sh al sistema
+# Contraseñas (se piden aquí dentro para seguridad)
+echo ">>> Configura la contraseña de ROOT:"
+passwd root
+echo ">>> Configura la contraseña de $USERNAME:"
+passwd $USERNAME
+
+# Copiar postinstall.sh si existe
 if [[ -f /root/postinstall.sh ]]; then
-    cp /root/postinstall.sh /root/
-    chmod +x /root/postinstall.sh
+    cp /root/postinstall.sh /home/$USERNAME/
+    chown $USERNAME:$USERNAME /home/$USERNAME/postinstall.sh
+    chmod +x /home/$USERNAME/postinstall.sh
 fi
 
 EOF
 
-# Pausa y reinicio
-echo ">>> Instalación completada. Presiona Enter para reiniciar..."
-read -r _
-reboot
+# === Finalizar instalación con menú ===
+echo
+echo ">>> ✅ Instalación completada."
+echo ">>> ¿Qué deseas hacer ahora?"
+select opt in "Reiniciar" "Salir sin reiniciar"; do
+    case \$opt in
+        "Reiniciar")
+            echo ">>> Reiniciando..."
+            reboot
+            break
+            ;;
+        "Salir sin reiniciar")
+            echo ">>> Has salido del script. Recuerda reiniciar manualmente antes de usar Arch."
+            break
+            ;;
+        *)
+            echo "Opción inválida."
+            ;;
+    esac
+done
